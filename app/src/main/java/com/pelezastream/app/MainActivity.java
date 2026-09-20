@@ -83,9 +83,6 @@ public class MainActivity extends Activity {
         cookieManager.setAcceptCookie(true);
         cookieManager.setAcceptThirdPartyCookies(webView, true);
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WebView.enableSafeBrowsing(this, null);
-        }
 
         webView.setWebViewClient(new PelezaWebViewClient());
         webView.setWebChromeClient(new PelezaChromeClient());
