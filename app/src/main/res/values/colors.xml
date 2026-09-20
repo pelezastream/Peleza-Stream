@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="peleza_red">#E50914</color>
+    <color name="peleza_black">#0B0B0D</color>
+    <color name="peleza_surface">#141417</color>
+    <color name="peleza_white">#FFFFFF</color>
+</resources>
