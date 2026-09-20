@@ -18,14 +18,14 @@ This repository establishes `com.pelezastream.app` as the production application
 
 ## App features
 
-- Loads Peleza Stream from the current `pelezastream.com` domain.
+- Uses a Peleza P/play adaptive launcher icon and a dedicated dark/red branded splash screen.\n- Loads Peleza Stream from the current `pelezastream.com` domain.
 - Keeps Peleza links inside the app.
 - Opens non-Peleza web links and custom schemes in their appropriate external app.
 - Handles fullscreen HTML5 video.
 - Supports website file-upload fields.
 - Supports downloads through Android Download Manager.
 - Retains cookies/session state.
-- Displays a branded retry page for main-frame network failures, HTTP 408/429, and server 5xx errors.
+- Displays a matching Peleza-branded retry page for main-frame network failures, HTTP 408/429, and server 5xx errors.
 - Accepts Peleza web links through Android VIEW intents.
 - Cleartext traffic is disabled at the Android network-security layer.
 
