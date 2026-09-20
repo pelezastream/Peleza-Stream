@@ -116,7 +116,7 @@ jobs:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.pelezastream.app
           releaseFiles: app/build/outputs/bundle/release/app-release.aab
-          tracks: ${{ inputs.track }}
+          track: ${{ inputs.track }}
           status: completed
           whatsNewDirectory: distribution/whatsnew
 
