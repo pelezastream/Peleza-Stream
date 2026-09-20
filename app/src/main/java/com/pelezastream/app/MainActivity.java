@@ -1,5 +1,6 @@
 package com.pelezastream.app;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
@@ -83,9 +84,6 @@ public class MainActivity extends Activity {
         cookieManager.setAcceptCookie(true);
         cookieManager.setAcceptThirdPartyCookies(webView, true);
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WebView.enableSafeBrowsing(this, null);
-        }
 
         webView.setWebViewClient(new PelezaWebViewClient());
         webView.setWebChromeClient(new PelezaChromeClient());
@@ -176,6 +174,7 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    @SuppressLint("GestureBackNavigation")
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {

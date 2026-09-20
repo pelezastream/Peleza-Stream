@@ -49,7 +49,17 @@ jobs:
         run: python3 scripts/verify-project.py
 
       - name: Run Android lint
-        run: gradle --no-daemon --stacktrace :app:lintDebug
+        shell: bash
+        run: |
+          set +e
+          gradle --no-daemon --stacktrace :app:lintDebug
+          rc=$?
+          REPORT="app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
+          if [ -f "$REPORT" ]; then
+            echo "----- Android lint report -----"
+            cat "$REPORT"
+          fi
+          exit $rc
 
       - name: Build debug APK and release AAB
         run: gradle --no-daemon --stacktrace clean :app:assembleDebug :app:bundleRelease
@@ -80,9 +90,9 @@ jobs:
           {
             echo "## Peleza Stream Android 1.1.0"
             echo ""
-            echo "- Package: \`com.pelezastream.app\`"
-            echo "- Debug APK: \`Peleza-Stream-v1.1.0-debug.apk\`"
-            echo "- Release bundle: \`Peleza-Stream-v1.1.0-release-unsigned.aab\`"
+            echo "- Package: `com.pelezastream.app`"
+            echo "- Debug APK: `Peleza-Stream-v1.1.0-debug.apk`"
+            echo "- Release bundle: `Peleza-Stream-v1.1.0-release-unsigned.aab`"
             echo "- Target SDK: Android 16 / API 36"
             echo "- Production Play signing/deployment: use the **Google Play Release** workflow."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,133 @@
+name: Google Play Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        description: Google Play track
+        required: true
+        default: internal
+        type: choice
+        options:
+          - internal
+          - alpha
+          - beta
+          - production
+
+permissions:
+  contents: read
+
+concurrency:
+  group: peleza-google-play-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build signed AAB and deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+
+      - name: Verify required release secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD PLAY_SERVICE_ACCOUNT_JSON; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required GitHub secret: $name"
+              exit 1
+            fi
+          done
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android 16 SDK
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+          cache-provider: basic
+
+      - name: Verify repository structure
+        run: python3 scripts/verify-project.py
+
+      - name: Decode Android upload keystore
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/peleza-signing"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/peleza-signing/peleza-upload.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/peleza-signing/peleza-upload.jks" >> "$GITHUB_ENV"
+
+      - name: Run release lint
+        run: gradle --no-daemon --stacktrace :app:lintRelease
+
+      - name: Build signed release APK and AAB
+        run: gradle --no-daemon --stacktrace clean :app:assembleRelease :app:bundleRelease
+
+      - name: Verify release signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          AAB="app/build/outputs/bundle/release/app-release.aab"
+          test -f "$APK"
+          test -f "$AAB"
+          apksigner verify --verbose "$APK" >/dev/null
+          jarsigner -verify -verbose -certs "$AAB" >/dev/null
+          echo "Signed APK verified: $APK"
+          echo "Signed AAB verified: $AAB"
+
+      - name: Save signed release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Peleza-Stream-v1.1.0-signed-release
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload to Google Play
+        uses: r0adkll/upload-google-play@v1.1.5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.pelezastream.app
+          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          track: ${{ inputs.track }}
+          status: completed
+          whatsNewDirectory: distribution/whatsnew
+
+      - name: Release summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Peleza Stream Google Play release"
+            echo ""
+            echo "- Package: `com.pelezastream.app`"
+            echo "- Version: 1.1.0 (110)"
+            echo "- Requested track: `${{ inputs.track }}`"
+          } >> "$GITHUB_STEP_SUMMARY"
