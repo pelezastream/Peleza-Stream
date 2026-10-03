@@ -1,0 +1,129 @@
+name: Website APK Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'app/**'
+      - 'build.gradle'
+      - 'settings.gradle'
+      - 'gradle.properties'
+      - 'scripts/**'
+      - '.github/workflows/website-apk-release.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: peleza-website-apk-release
+  cancel-in-progress: false
+
+jobs:
+  signed-release:
+    name: Build permanent signed APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+
+      - name: Check signing configuration
+        id: signing
+        shell: bash
+        run: |
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ] && [ -n "${ANDROID_KEYSTORE_PASSWORD:-}" ] && [ -n "${ANDROID_KEY_ALIAS:-}" ] && [ -n "${ANDROID_KEY_PASSWORD:-}" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "### Signed website APK not published" >> "$GITHUB_STEP_SUMMARY"
+            echo "Android signing secrets are not configured. Peleza Stream hides the public APK install ribbon until a signed release exists." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Set up JDK 17
+        if: steps.signing.outputs.ready == 'true'
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        if: steps.signing.outputs.ready == 'true'
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android 16 SDK
+        if: steps.signing.outputs.ready == 'true'
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle 8.13
+        if: steps.signing.outputs.ready == 'true'
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.13'
+          cache-provider: basic
+
+      - name: Verify repository structure
+        if: steps.signing.outputs.ready == 'true'
+        run: python3 scripts/verify-project.py
+
+      - name: Decode production signing key
+        if: steps.signing.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/peleza-signing"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/peleza-signing/peleza-upload.jks"
+          chmod 600 "$RUNNER_TEMP/peleza-signing/peleza-upload.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/peleza-signing/peleza-upload.jks" >> "$GITHUB_ENV"
+
+      - name: Build and verify signed release
+        if: steps.signing.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace clean :app:lintRelease :app:assembleRelease :app:bundleRelease
+          APK="app/build/outputs/apk/release/app-release.apk"
+          AAB="app/build/outputs/bundle/release/app-release.aab"
+          test -s "$APK"
+          test -s "$AAB"
+          apksigner verify --verbose "$APK" >/dev/null
+          jarsigner -verify -verbose -certs "$AAB" >/dev/null
+          mkdir -p dist
+          cp "$APK" dist/Peleza-Stream-v1.1.0.apk
+          cp "$AAB" dist/Peleza-Stream-v1.1.0.aab
+          (cd dist && sha256sum Peleza-Stream-v1.1.0.apk Peleza-Stream-v1.1.0.aab > SHA256SUMS.txt)
+
+      - name: Publish permanent GitHub Release assets
+        if: steps.signing.outputs.ready == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-v1.1.0
+          name: Peleza Stream Android v1.1.0
+          body: |
+            Signed production Android release for Peleza Stream.
+            Package: com.pelezastream.app
+            The APK is the permanent direct-download build used by pelezastream.com.
+          make_latest: true
+          files: |
+            dist/Peleza-Stream-v1.1.0.apk
+            dist/Peleza-Stream-v1.1.0.aab
+            dist/SHA256SUMS.txt
+          fail_on_unmatched_files: true
+
+      - name: Upload signed CI artifact
+        if: steps.signing.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Peleza-Stream-v1.1.0-signed-production
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
