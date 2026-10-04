@@ -73,13 +73,41 @@ jobs:
       - name: Verify repository structure
         run: python3 scripts/verify-project.py
 
-      - name: Decode Android upload keystore
+      - name: Decode and validate Android upload keystore
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/peleza-signing"
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/peleza-signing/peleza-upload.jks"
-          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/peleza-signing/peleza-upload.jks" >> "$GITHUB_ENV"
+          export PELEZA_KEYSTORE_OUT="$RUNNER_TEMP/peleza-signing/peleza-upload.jks"
+          python3 - <<'PY'
+          import base64, binascii, os, pathlib, re
+
+          raw = os.environ.get("ANDROID_KEYSTORE_BASE64", "")
+          out = pathlib.Path(os.environ["PELEZA_KEYSTORE_OUT"])
+          compact = re.sub(r"\s+", "", raw).strip("'\"")
+          decoded = None
+          try:
+              decoded = base64.b64decode(compact, validate=True)
+          except (binascii.Error, ValueError):
+              pass
+          if not decoded:
+              parts = []
+              for line in raw.splitlines():
+                  line = line.strip().strip("'\"")
+                  if len(line) >= 60 and re.fullmatch(r"[A-Za-z0-9+/=]+", line):
+                      parts.append(line)
+              if parts:
+                  try:
+                      decoded = base64.b64decode("".join(parts), validate=True)
+                  except (binascii.Error, ValueError):
+                      decoded = None
+          if not decoded or len(decoded) < 512:
+              raise SystemExit("Could not decode ANDROID_KEYSTORE_BASE64.")
+          out.write_bytes(decoded)
+          PY
+          chmod 600 "$PELEZA_KEYSTORE_OUT"
+          keytool -list -keystore "$PELEZA_KEYSTORE_OUT" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null
+          echo "ANDROID_KEYSTORE_PATH=$PELEZA_KEYSTORE_OUT" >> "$GITHUB_ENV"
 
       - name: Run release lint
         run: gradle --no-daemon --stacktrace :app:lintRelease
