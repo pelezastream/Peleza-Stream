@@ -128,7 +128,7 @@ jobs:
           AAB="app/build/outputs/bundle/release/app-release.aab"
           test -f "$APK"
           test -f "$AAB"
-          apksigner verify --verbose "$APK" >/dev/null
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK" >/dev/null
           jarsigner -verify -verbose -certs "$AAB" >/dev/null
           echo "Signed APK verified: $APK"
           echo "Signed AAB verified: $AAB"
