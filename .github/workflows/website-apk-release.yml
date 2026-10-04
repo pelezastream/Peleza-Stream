@@ -75,15 +75,52 @@ jobs:
         if: steps.signing.outputs.ready == 'true'
         run: python3 scripts/verify-project.py
 
-      - name: Decode production signing key
+      - name: Decode and validate production signing key
         if: steps.signing.outputs.ready == 'true'
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/peleza-signing"
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/peleza-signing/peleza-upload.jks"
-          chmod 600 "$RUNNER_TEMP/peleza-signing/peleza-upload.jks"
-          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/peleza-signing/peleza-upload.jks" >> "$GITHUB_ENV"
+          export PELEZA_KEYSTORE_OUT="$RUNNER_TEMP/peleza-signing/peleza-upload.jks"
+          python3 - <<'PY'
+          import base64, binascii, os, pathlib, re
+
+          raw = os.environ.get("ANDROID_KEYSTORE_BASE64", "")
+          out = pathlib.Path(os.environ["PELEZA_KEYSTORE_OUT"])
+          if not raw.strip():
+              raise SystemExit("ANDROID_KEYSTORE_BASE64 is empty")
+
+          # First try the secret exactly as supplied, ignoring whitespace.
+          compact = re.sub(r"\s+", "", raw).strip("'\"")
+          decoded = None
+          try:
+              decoded = base64.b64decode(compact, validate=True)
+          except (binascii.Error, ValueError):
+              pass
+
+          # If the user pasted labels/instructions too, extract and join only
+          # long Base64-looking lines from the secret.
+          if not decoded:
+              parts = []
+              for line in raw.splitlines():
+                  line = line.strip().strip("'\"")
+                  if len(line) >= 60 and re.fullmatch(r"[A-Za-z0-9+/=]+", line):
+                      parts.append(line)
+              if parts:
+                  candidate = "".join(parts)
+                  try:
+                      decoded = base64.b64decode(candidate, validate=True)
+                  except (binascii.Error, ValueError):
+                      decoded = None
+
+          if not decoded or len(decoded) < 512:
+              raise SystemExit("Could not decode ANDROID_KEYSTORE_BASE64. Re-save that GitHub secret using only the Base64 value.")
+
+          out.write_bytes(decoded)
+          PY
+          chmod 600 "$PELEZA_KEYSTORE_OUT"
+          keytool -list -keystore "$PELEZA_KEYSTORE_OUT" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null
+          echo "ANDROID_KEYSTORE_PATH=$PELEZA_KEYSTORE_OUT" >> "$GITHUB_ENV"
 
       - name: Build and verify signed release
         if: steps.signing.outputs.ready == 'true'
