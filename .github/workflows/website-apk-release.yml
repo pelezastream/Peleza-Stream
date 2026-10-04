@@ -119,7 +119,17 @@ jobs:
           out.write_bytes(decoded)
           PY
           chmod 600 "$PELEZA_KEYSTORE_OUT"
-          keytool -list -keystore "$PELEZA_KEYSTORE_OUT" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null
+          echo "Decoded keystore size: $(wc -c < "$PELEZA_KEYSTORE_OUT") bytes"
+          echo "Decoded keystore SHA-256: $(sha256sum "$PELEZA_KEYSTORE_OUT" | awk '{print $1}')"
+          if ! keytool -list -keystore "$PELEZA_KEYSTORE_OUT" -storepass "$ANDROID_KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+            echo "::error::The keystore decoded, but ANDROID_KEYSTORE_PASSWORD does not open it. Re-save ANDROID_KEYSTORE_PASSWORD from the signing kit."
+            exit 1
+          fi
+          if ! keytool -list -keystore "$PELEZA_KEYSTORE_OUT" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null 2>&1; then
+            echo "::error::The keystore password is correct, but ANDROID_KEY_ALIAS does not match the signing key alias. Re-save ANDROID_KEY_ALIAS from the signing kit."
+            exit 1
+          fi
+          echo "Keystore password and alias validated."
           echo "ANDROID_KEYSTORE_PATH=$PELEZA_KEYSTORE_OUT" >> "$GITHUB_ENV"
 
       - name: Build and verify signed release
