@@ -141,7 +141,7 @@ jobs:
           AAB="app/build/outputs/bundle/release/app-release.aab"
           test -s "$APK"
           test -s "$AAB"
-          apksigner verify --verbose "$APK" >/dev/null
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK" >/dev/null
           jarsigner -verify -verbose -certs "$AAB" >/dev/null
           mkdir -p dist
           cp "$APK" dist/Peleza-Stream-v1.1.0.apk
