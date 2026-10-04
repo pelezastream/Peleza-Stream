@@ -80,6 +80,567 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # GitHub's secret editor can preserve a trailing pasted newline.
+          # Strip CR/LF only; all other characters remain unchanged.
+          ANDROID_KEYSTORE_PASSWORD="${ANDROID_KEYSTORE_PASSWORD//          python3 - <<'PY'
+          import base64, binascii, os, pathlib, re
+
+          raw = os.environ.get("ANDROID_KEYSTORE_BASE64", "")
+          out = pathlib.Path(os.environ["PELEZA_KEYSTORE_OUT"])
+          if not raw.strip():
+              raise SystemExit("ANDROID_KEYSTORE_BASE64 is empty")
+
+          # First try the secret exactly as supplied, ignoring whitespace.
+          compact = re.sub(r"\s+", "", raw).strip("'\"")
+          decoded = None
+          try:
+              decoded = base64.b64decode(compact, validate=True)
+          except (binascii.Error, ValueError):
+              pass
+
+          # If the user pasted labels/instructions too, extract and join only
+          # long Base64-looking lines from the secret.
+          if not decoded:
+              parts = []
+              for line in raw.splitlines():
+                  line = line.strip().strip("'\"")
+                  if len(line) >= 60 and re.fullmatch(r"[A-Za-z0-9+/=]+", line):
+                      parts.append(line)
+              if parts:
+                  candidate = "".join(parts)
+                  try:
+                      decoded = base64.b64decode(candidate, validate=True)
+                  except (binascii.Error, ValueError):
+                      decoded = None
+
+          if not decoded or len(decoded) < 512:
+              raise SystemExit("Could not decode ANDROID_KEYSTORE_BASE64. Re-save that GitHub secret using only the Base64 value.")
+
+          out.write_bytes(decoded)
+          PY
+          chmod 600 "$PELEZA_KEYSTORE_OUT"
+          echo "Decoded keystore size: $(wc -c < "$PELEZA_KEYSTORE_OUT") bytes"
+          echo "Decoded keystore SHA-256: $(sha256sum "$PELEZA_KEYSTORE_OUT" | awk '{print $1}')"
+          if ! keytool -list -keystore "$PELEZA_KEYSTORE_OUT" -storepass "$ANDROID_KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+            echo "::error::The keystore decoded, but ANDROID_KEYSTORE_PASSWORD does not open it. Re-save ANDROID_KEYSTORE_PASSWORD from the signing kit."
+            exit 1
+          fi
+          if ! keytool -list -keystore "$PELEZA_KEYSTORE_OUT" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null 2>&1; then
+            echo "::error::The keystore password is correct, but ANDROID_KEY_ALIAS does not match the signing key alias. Re-save ANDROID_KEY_ALIAS from the signing kit."
+            exit 1
+          fi
+          echo "Keystore password and alias validated."
+          echo "ANDROID_KEYSTORE_PATH=$PELEZA_KEYSTORE_OUT" >> "$GITHUB_ENV"
+
+      - name: Build and verify signed release
+        if: steps.signing.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace clean :app:lintRelease :app:assembleRelease :app:bundleRelease
+          APK="app/build/outputs/apk/release/app-release.apk"
+          AAB="app/build/outputs/bundle/release/app-release.aab"
+          test -s "$APK"
+          test -s "$AAB"
+          apksigner verify --verbose "$APK" >/dev/null
+          jarsigner -verify -verbose -certs "$AAB" >/dev/null
+          mkdir -p dist
+          cp "$APK" dist/Peleza-Stream-v1.1.0.apk
+          cp "$AAB" dist/Peleza-Stream-v1.1.0.aab
+          (cd dist && sha256sum Peleza-Stream-v1.1.0.apk Peleza-Stream-v1.1.0.aab > SHA256SUMS.txt)
+
+      - name: Publish permanent GitHub Release assets
+        if: steps.signing.outputs.ready == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-v1.1.0
+          name: Peleza Stream Android v1.1.0
+          body: |
+            Signed production Android release for Peleza Stream.
+            Package: com.pelezastream.app
+            The APK is the permanent direct-download build used by pelezastream.com.
+          make_latest: true
+          files: |
+            dist/Peleza-Stream-v1.1.0.apk
+            dist/Peleza-Stream-v1.1.0.aab
+            dist/SHA256SUMS.txt
+          fail_on_unmatched_files: true
+
+      - name: Upload signed CI artifact
+        if: steps.signing.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Peleza-Stream-v1.1.0-signed-production
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+\r'/}"
+          ANDROID_KEYSTORE_PASSWORD="${ANDROID_KEYSTORE_PASSWORD//          python3 - <<'PY'
+          import base64, binascii, os, pathlib, re
+
+          raw = os.environ.get("ANDROID_KEYSTORE_BASE64", "")
+          out = pathlib.Path(os.environ["PELEZA_KEYSTORE_OUT"])
+          if not raw.strip():
+              raise SystemExit("ANDROID_KEYSTORE_BASE64 is empty")
+
+          # First try the secret exactly as supplied, ignoring whitespace.
+          compact = re.sub(r"\s+", "", raw).strip("'\"")
+          decoded = None
+          try:
+              decoded = base64.b64decode(compact, validate=True)
+          except (binascii.Error, ValueError):
+              pass
+
+          # If the user pasted labels/instructions too, extract and join only
+          # long Base64-looking lines from the secret.
+          if not decoded:
+              parts = []
+              for line in raw.splitlines():
+                  line = line.strip().strip("'\"")
+                  if len(line) >= 60 and re.fullmatch(r"[A-Za-z0-9+/=]+", line):
+                      parts.append(line)
+              if parts:
+                  candidate = "".join(parts)
+                  try:
+                      decoded = base64.b64decode(candidate, validate=True)
+                  except (binascii.Error, ValueError):
+                      decoded = None
+
+          if not decoded or len(decoded) < 512:
+              raise SystemExit("Could not decode ANDROID_KEYSTORE_BASE64. Re-save that GitHub secret using only the Base64 value.")
+
+          out.write_bytes(decoded)
+          PY
+          chmod 600 "$PELEZA_KEYSTORE_OUT"
+          echo "Decoded keystore size: $(wc -c < "$PELEZA_KEYSTORE_OUT") bytes"
+          echo "Decoded keystore SHA-256: $(sha256sum "$PELEZA_KEYSTORE_OUT" | awk '{print $1}')"
+          if ! keytool -list -keystore "$PELEZA_KEYSTORE_OUT" -storepass "$ANDROID_KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+            echo "::error::The keystore decoded, but ANDROID_KEYSTORE_PASSWORD does not open it. Re-save ANDROID_KEYSTORE_PASSWORD from the signing kit."
+            exit 1
+          fi
+          if ! keytool -list -keystore "$PELEZA_KEYSTORE_OUT" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null 2>&1; then
+            echo "::error::The keystore password is correct, but ANDROID_KEY_ALIAS does not match the signing key alias. Re-save ANDROID_KEY_ALIAS from the signing kit."
+            exit 1
+          fi
+          echo "Keystore password and alias validated."
+          echo "ANDROID_KEYSTORE_PATH=$PELEZA_KEYSTORE_OUT" >> "$GITHUB_ENV"
+
+      - name: Build and verify signed release
+        if: steps.signing.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace clean :app:lintRelease :app:assembleRelease :app:bundleRelease
+          APK="app/build/outputs/apk/release/app-release.apk"
+          AAB="app/build/outputs/bundle/release/app-release.aab"
+          test -s "$APK"
+          test -s "$AAB"
+          apksigner verify --verbose "$APK" >/dev/null
+          jarsigner -verify -verbose -certs "$AAB" >/dev/null
+          mkdir -p dist
+          cp "$APK" dist/Peleza-Stream-v1.1.0.apk
+          cp "$AAB" dist/Peleza-Stream-v1.1.0.aab
+          (cd dist && sha256sum Peleza-Stream-v1.1.0.apk Peleza-Stream-v1.1.0.aab > SHA256SUMS.txt)
+
+      - name: Publish permanent GitHub Release assets
+        if: steps.signing.outputs.ready == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-v1.1.0
+          name: Peleza Stream Android v1.1.0
+          body: |
+            Signed production Android release for Peleza Stream.
+            Package: com.pelezastream.app
+            The APK is the permanent direct-download build used by pelezastream.com.
+          make_latest: true
+          files: |
+            dist/Peleza-Stream-v1.1.0.apk
+            dist/Peleza-Stream-v1.1.0.aab
+            dist/SHA256SUMS.txt
+          fail_on_unmatched_files: true
+
+      - name: Upload signed CI artifact
+        if: steps.signing.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Peleza-Stream-v1.1.0-signed-production
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+\n'/}"
+          ANDROID_KEY_ALIAS="${ANDROID_KEY_ALIAS//          python3 - <<'PY'
+          import base64, binascii, os, pathlib, re
+
+          raw = os.environ.get("ANDROID_KEYSTORE_BASE64", "")
+          out = pathlib.Path(os.environ["PELEZA_KEYSTORE_OUT"])
+          if not raw.strip():
+              raise SystemExit("ANDROID_KEYSTORE_BASE64 is empty")
+
+          # First try the secret exactly as supplied, ignoring whitespace.
+          compact = re.sub(r"\s+", "", raw).strip("'\"")
+          decoded = None
+          try:
+              decoded = base64.b64decode(compact, validate=True)
+          except (binascii.Error, ValueError):
+              pass
+
+          # If the user pasted labels/instructions too, extract and join only
+          # long Base64-looking lines from the secret.
+          if not decoded:
+              parts = []
+              for line in raw.splitlines():
+                  line = line.strip().strip("'\"")
+                  if len(line) >= 60 and re.fullmatch(r"[A-Za-z0-9+/=]+", line):
+                      parts.append(line)
+              if parts:
+                  candidate = "".join(parts)
+                  try:
+                      decoded = base64.b64decode(candidate, validate=True)
+                  except (binascii.Error, ValueError):
+                      decoded = None
+
+          if not decoded or len(decoded) < 512:
+              raise SystemExit("Could not decode ANDROID_KEYSTORE_BASE64. Re-save that GitHub secret using only the Base64 value.")
+
+          out.write_bytes(decoded)
+          PY
+          chmod 600 "$PELEZA_KEYSTORE_OUT"
+          echo "Decoded keystore size: $(wc -c < "$PELEZA_KEYSTORE_OUT") bytes"
+          echo "Decoded keystore SHA-256: $(sha256sum "$PELEZA_KEYSTORE_OUT" | awk '{print $1}')"
+          if ! keytool -list -keystore "$PELEZA_KEYSTORE_OUT" -storepass "$ANDROID_KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+            echo "::error::The keystore decoded, but ANDROID_KEYSTORE_PASSWORD does not open it. Re-save ANDROID_KEYSTORE_PASSWORD from the signing kit."
+            exit 1
+          fi
+          if ! keytool -list -keystore "$PELEZA_KEYSTORE_OUT" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null 2>&1; then
+            echo "::error::The keystore password is correct, but ANDROID_KEY_ALIAS does not match the signing key alias. Re-save ANDROID_KEY_ALIAS from the signing kit."
+            exit 1
+          fi
+          echo "Keystore password and alias validated."
+          echo "ANDROID_KEYSTORE_PATH=$PELEZA_KEYSTORE_OUT" >> "$GITHUB_ENV"
+
+      - name: Build and verify signed release
+        if: steps.signing.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace clean :app:lintRelease :app:assembleRelease :app:bundleRelease
+          APK="app/build/outputs/apk/release/app-release.apk"
+          AAB="app/build/outputs/bundle/release/app-release.aab"
+          test -s "$APK"
+          test -s "$AAB"
+          apksigner verify --verbose "$APK" >/dev/null
+          jarsigner -verify -verbose -certs "$AAB" >/dev/null
+          mkdir -p dist
+          cp "$APK" dist/Peleza-Stream-v1.1.0.apk
+          cp "$AAB" dist/Peleza-Stream-v1.1.0.aab
+          (cd dist && sha256sum Peleza-Stream-v1.1.0.apk Peleza-Stream-v1.1.0.aab > SHA256SUMS.txt)
+
+      - name: Publish permanent GitHub Release assets
+        if: steps.signing.outputs.ready == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-v1.1.0
+          name: Peleza Stream Android v1.1.0
+          body: |
+            Signed production Android release for Peleza Stream.
+            Package: com.pelezastream.app
+            The APK is the permanent direct-download build used by pelezastream.com.
+          make_latest: true
+          files: |
+            dist/Peleza-Stream-v1.1.0.apk
+            dist/Peleza-Stream-v1.1.0.aab
+            dist/SHA256SUMS.txt
+          fail_on_unmatched_files: true
+
+      - name: Upload signed CI artifact
+        if: steps.signing.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Peleza-Stream-v1.1.0-signed-production
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+\r'/}"
+          ANDROID_KEY_ALIAS="${ANDROID_KEY_ALIAS//          python3 - <<'PY'
+          import base64, binascii, os, pathlib, re
+
+          raw = os.environ.get("ANDROID_KEYSTORE_BASE64", "")
+          out = pathlib.Path(os.environ["PELEZA_KEYSTORE_OUT"])
+          if not raw.strip():
+              raise SystemExit("ANDROID_KEYSTORE_BASE64 is empty")
+
+          # First try the secret exactly as supplied, ignoring whitespace.
+          compact = re.sub(r"\s+", "", raw).strip("'\"")
+          decoded = None
+          try:
+              decoded = base64.b64decode(compact, validate=True)
+          except (binascii.Error, ValueError):
+              pass
+
+          # If the user pasted labels/instructions too, extract and join only
+          # long Base64-looking lines from the secret.
+          if not decoded:
+              parts = []
+              for line in raw.splitlines():
+                  line = line.strip().strip("'\"")
+                  if len(line) >= 60 and re.fullmatch(r"[A-Za-z0-9+/=]+", line):
+                      parts.append(line)
+              if parts:
+                  candidate = "".join(parts)
+                  try:
+                      decoded = base64.b64decode(candidate, validate=True)
+                  except (binascii.Error, ValueError):
+                      decoded = None
+
+          if not decoded or len(decoded) < 512:
+              raise SystemExit("Could not decode ANDROID_KEYSTORE_BASE64. Re-save that GitHub secret using only the Base64 value.")
+
+          out.write_bytes(decoded)
+          PY
+          chmod 600 "$PELEZA_KEYSTORE_OUT"
+          echo "Decoded keystore size: $(wc -c < "$PELEZA_KEYSTORE_OUT") bytes"
+          echo "Decoded keystore SHA-256: $(sha256sum "$PELEZA_KEYSTORE_OUT" | awk '{print $1}')"
+          if ! keytool -list -keystore "$PELEZA_KEYSTORE_OUT" -storepass "$ANDROID_KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+            echo "::error::The keystore decoded, but ANDROID_KEYSTORE_PASSWORD does not open it. Re-save ANDROID_KEYSTORE_PASSWORD from the signing kit."
+            exit 1
+          fi
+          if ! keytool -list -keystore "$PELEZA_KEYSTORE_OUT" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null 2>&1; then
+            echo "::error::The keystore password is correct, but ANDROID_KEY_ALIAS does not match the signing key alias. Re-save ANDROID_KEY_ALIAS from the signing kit."
+            exit 1
+          fi
+          echo "Keystore password and alias validated."
+          echo "ANDROID_KEYSTORE_PATH=$PELEZA_KEYSTORE_OUT" >> "$GITHUB_ENV"
+
+      - name: Build and verify signed release
+        if: steps.signing.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace clean :app:lintRelease :app:assembleRelease :app:bundleRelease
+          APK="app/build/outputs/apk/release/app-release.apk"
+          AAB="app/build/outputs/bundle/release/app-release.aab"
+          test -s "$APK"
+          test -s "$AAB"
+          apksigner verify --verbose "$APK" >/dev/null
+          jarsigner -verify -verbose -certs "$AAB" >/dev/null
+          mkdir -p dist
+          cp "$APK" dist/Peleza-Stream-v1.1.0.apk
+          cp "$AAB" dist/Peleza-Stream-v1.1.0.aab
+          (cd dist && sha256sum Peleza-Stream-v1.1.0.apk Peleza-Stream-v1.1.0.aab > SHA256SUMS.txt)
+
+      - name: Publish permanent GitHub Release assets
+        if: steps.signing.outputs.ready == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-v1.1.0
+          name: Peleza Stream Android v1.1.0
+          body: |
+            Signed production Android release for Peleza Stream.
+            Package: com.pelezastream.app
+            The APK is the permanent direct-download build used by pelezastream.com.
+          make_latest: true
+          files: |
+            dist/Peleza-Stream-v1.1.0.apk
+            dist/Peleza-Stream-v1.1.0.aab
+            dist/SHA256SUMS.txt
+          fail_on_unmatched_files: true
+
+      - name: Upload signed CI artifact
+        if: steps.signing.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Peleza-Stream-v1.1.0-signed-production
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+\n'/}"
+          ANDROID_KEY_PASSWORD="${ANDROID_KEY_PASSWORD//          python3 - <<'PY'
+          import base64, binascii, os, pathlib, re
+
+          raw = os.environ.get("ANDROID_KEYSTORE_BASE64", "")
+          out = pathlib.Path(os.environ["PELEZA_KEYSTORE_OUT"])
+          if not raw.strip():
+              raise SystemExit("ANDROID_KEYSTORE_BASE64 is empty")
+
+          # First try the secret exactly as supplied, ignoring whitespace.
+          compact = re.sub(r"\s+", "", raw).strip("'\"")
+          decoded = None
+          try:
+              decoded = base64.b64decode(compact, validate=True)
+          except (binascii.Error, ValueError):
+              pass
+
+          # If the user pasted labels/instructions too, extract and join only
+          # long Base64-looking lines from the secret.
+          if not decoded:
+              parts = []
+              for line in raw.splitlines():
+                  line = line.strip().strip("'\"")
+                  if len(line) >= 60 and re.fullmatch(r"[A-Za-z0-9+/=]+", line):
+                      parts.append(line)
+              if parts:
+                  candidate = "".join(parts)
+                  try:
+                      decoded = base64.b64decode(candidate, validate=True)
+                  except (binascii.Error, ValueError):
+                      decoded = None
+
+          if not decoded or len(decoded) < 512:
+              raise SystemExit("Could not decode ANDROID_KEYSTORE_BASE64. Re-save that GitHub secret using only the Base64 value.")
+
+          out.write_bytes(decoded)
+          PY
+          chmod 600 "$PELEZA_KEYSTORE_OUT"
+          echo "Decoded keystore size: $(wc -c < "$PELEZA_KEYSTORE_OUT") bytes"
+          echo "Decoded keystore SHA-256: $(sha256sum "$PELEZA_KEYSTORE_OUT" | awk '{print $1}')"
+          if ! keytool -list -keystore "$PELEZA_KEYSTORE_OUT" -storepass "$ANDROID_KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+            echo "::error::The keystore decoded, but ANDROID_KEYSTORE_PASSWORD does not open it. Re-save ANDROID_KEYSTORE_PASSWORD from the signing kit."
+            exit 1
+          fi
+          if ! keytool -list -keystore "$PELEZA_KEYSTORE_OUT" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null 2>&1; then
+            echo "::error::The keystore password is correct, but ANDROID_KEY_ALIAS does not match the signing key alias. Re-save ANDROID_KEY_ALIAS from the signing kit."
+            exit 1
+          fi
+          echo "Keystore password and alias validated."
+          echo "ANDROID_KEYSTORE_PATH=$PELEZA_KEYSTORE_OUT" >> "$GITHUB_ENV"
+
+      - name: Build and verify signed release
+        if: steps.signing.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace clean :app:lintRelease :app:assembleRelease :app:bundleRelease
+          APK="app/build/outputs/apk/release/app-release.apk"
+          AAB="app/build/outputs/bundle/release/app-release.aab"
+          test -s "$APK"
+          test -s "$AAB"
+          apksigner verify --verbose "$APK" >/dev/null
+          jarsigner -verify -verbose -certs "$AAB" >/dev/null
+          mkdir -p dist
+          cp "$APK" dist/Peleza-Stream-v1.1.0.apk
+          cp "$AAB" dist/Peleza-Stream-v1.1.0.aab
+          (cd dist && sha256sum Peleza-Stream-v1.1.0.apk Peleza-Stream-v1.1.0.aab > SHA256SUMS.txt)
+
+      - name: Publish permanent GitHub Release assets
+        if: steps.signing.outputs.ready == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-v1.1.0
+          name: Peleza Stream Android v1.1.0
+          body: |
+            Signed production Android release for Peleza Stream.
+            Package: com.pelezastream.app
+            The APK is the permanent direct-download build used by pelezastream.com.
+          make_latest: true
+          files: |
+            dist/Peleza-Stream-v1.1.0.apk
+            dist/Peleza-Stream-v1.1.0.aab
+            dist/SHA256SUMS.txt
+          fail_on_unmatched_files: true
+
+      - name: Upload signed CI artifact
+        if: steps.signing.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Peleza-Stream-v1.1.0-signed-production
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+\r'/}"
+          ANDROID_KEY_PASSWORD="${ANDROID_KEY_PASSWORD//          python3 - <<'PY'
+          import base64, binascii, os, pathlib, re
+
+          raw = os.environ.get("ANDROID_KEYSTORE_BASE64", "")
+          out = pathlib.Path(os.environ["PELEZA_KEYSTORE_OUT"])
+          if not raw.strip():
+              raise SystemExit("ANDROID_KEYSTORE_BASE64 is empty")
+
+          # First try the secret exactly as supplied, ignoring whitespace.
+          compact = re.sub(r"\s+", "", raw).strip("'\"")
+          decoded = None
+          try:
+              decoded = base64.b64decode(compact, validate=True)
+          except (binascii.Error, ValueError):
+              pass
+
+          # If the user pasted labels/instructions too, extract and join only
+          # long Base64-looking lines from the secret.
+          if not decoded:
+              parts = []
+              for line in raw.splitlines():
+                  line = line.strip().strip("'\"")
+                  if len(line) >= 60 and re.fullmatch(r"[A-Za-z0-9+/=]+", line):
+                      parts.append(line)
+              if parts:
+                  candidate = "".join(parts)
+                  try:
+                      decoded = base64.b64decode(candidate, validate=True)
+                  except (binascii.Error, ValueError):
+                      decoded = None
+
+          if not decoded or len(decoded) < 512:
+              raise SystemExit("Could not decode ANDROID_KEYSTORE_BASE64. Re-save that GitHub secret using only the Base64 value.")
+
+          out.write_bytes(decoded)
+          PY
+          chmod 600 "$PELEZA_KEYSTORE_OUT"
+          echo "Decoded keystore size: $(wc -c < "$PELEZA_KEYSTORE_OUT") bytes"
+          echo "Decoded keystore SHA-256: $(sha256sum "$PELEZA_KEYSTORE_OUT" | awk '{print $1}')"
+          if ! keytool -list -keystore "$PELEZA_KEYSTORE_OUT" -storepass "$ANDROID_KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+            echo "::error::The keystore decoded, but ANDROID_KEYSTORE_PASSWORD does not open it. Re-save ANDROID_KEYSTORE_PASSWORD from the signing kit."
+            exit 1
+          fi
+          if ! keytool -list -keystore "$PELEZA_KEYSTORE_OUT" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null 2>&1; then
+            echo "::error::The keystore password is correct, but ANDROID_KEY_ALIAS does not match the signing key alias. Re-save ANDROID_KEY_ALIAS from the signing kit."
+            exit 1
+          fi
+          echo "Keystore password and alias validated."
+          echo "ANDROID_KEYSTORE_PATH=$PELEZA_KEYSTORE_OUT" >> "$GITHUB_ENV"
+
+      - name: Build and verify signed release
+        if: steps.signing.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace clean :app:lintRelease :app:assembleRelease :app:bundleRelease
+          APK="app/build/outputs/apk/release/app-release.apk"
+          AAB="app/build/outputs/bundle/release/app-release.aab"
+          test -s "$APK"
+          test -s "$AAB"
+          apksigner verify --verbose "$APK" >/dev/null
+          jarsigner -verify -verbose -certs "$AAB" >/dev/null
+          mkdir -p dist
+          cp "$APK" dist/Peleza-Stream-v1.1.0.apk
+          cp "$AAB" dist/Peleza-Stream-v1.1.0.aab
+          (cd dist && sha256sum Peleza-Stream-v1.1.0.apk Peleza-Stream-v1.1.0.aab > SHA256SUMS.txt)
+
+      - name: Publish permanent GitHub Release assets
+        if: steps.signing.outputs.ready == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-v1.1.0
+          name: Peleza Stream Android v1.1.0
+          body: |
+            Signed production Android release for Peleza Stream.
+            Package: com.pelezastream.app
+            The APK is the permanent direct-download build used by pelezastream.com.
+          make_latest: true
+          files: |
+            dist/Peleza-Stream-v1.1.0.apk
+            dist/Peleza-Stream-v1.1.0.aab
+            dist/SHA256SUMS.txt
+          fail_on_unmatched_files: true
+
+      - name: Upload signed CI artifact
+        if: steps.signing.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Peleza-Stream-v1.1.0-signed-production
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+\n'/}"
+          export ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD
           mkdir -p "$RUNNER_TEMP/peleza-signing"
           export PELEZA_KEYSTORE_OUT="$RUNNER_TEMP/peleza-signing/peleza-upload.jks"
           python3 - <<'PY'
