@@ -1,0 +1,3 @@
+a597e54a9095698dfebc88e427075395992c234cb018db7b96c8a89fcd88b9b7  OfflineAI-Android-arm64-v0.1.0.apk
+91d9f8a91f3cc1712f6d4c49b7df80917568e54564b772198b0e6194e8f0d591  OfflineAI-Linux-x64-v0.1.0.tar.gz
+6e6af1062ad031cfab1c97542653cc7bf49eb0a6177cfbe46d316c3a97cacbbb  OfflineAI-Source-v0.1.0.tar.gz
